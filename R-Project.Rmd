@@ -1,0 +1,837 @@
+---
+title: "R Project - Group 7"
+output: html_document
+date: '2022-11-02'
+---
+
+# Structure of the Report
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+```{r}
+DiagrammeR::grViz("digraph {
+  graph [layout = dot, rankdir = TB]
+  
+  node [shape = rectangle]        
+  rec1 [label = '1. Introduction']
+  rec2 [label = '2. Dataset and the Library Used']
+  rec3 [label = '3. Exploratory  Data Analysis']
+  rec4 [label = '4. Predictive Analysis']
+  rec5 [label = '5. Recommendations/Conclusions']
+  
+  # edge definitions with the node IDs
+  rec1 -> rec2 -> rec3 -> rec4 -> rec5
+  }",
+  height = 500)
+```
+
+# Part 1 - Introduction
+The 2009 Canadian Internet Use Survey dataset was taken from the Stats Canada website, and it is about the non-use of the internet by individual residents of Canada 15 years of age and over, living in the provinces in the year of 2009. It consists of 24 columns and 23179 rows. This dataset is important because it measures barriers to Internet access and use, online services, and using various digital technologies. With this information, the government can adopt policies to improve the conditions of this deficiency and to plan steps to make the internet accessible to everyone.
+
+# Part 2 - Dataset and the Library used
+
+```{r}
+nonUse <- read.csv('nonUse.csv', header = TRUE)
+library("ggplot2") 
+library("tidyverse")
+library("dplyr")
+library("janitor")
+library("gplots")
+library(caTools)
+library(ROCR) 
+library(randomForest)
+library(e1071)
+library(caTools)
+library(caret)
+library(corrplot)
+```
+
+# Part 3 - Pre-Processing
+
+```{r}
+###3.1 Count of missing values for each column
+sapply(nonUse,function(x) sum(is.na(nonUse))) 
+
+#5 Removing empty Columns and Rows - If any
+nonUse<-nonUse %>% remove_empty(whic=c("rows"))
+nonUse<-nonUse %>% remove_empty(whic=c("cols"))
+
+###3.2 To check the no of unique values for each column
+sapply(nonUse,function(x) length(unique(x)))
+
+###3.3 Summary
+summary(nonUse)
+
+```
+
+```{r}
+#3.4 Check sum of Null & NA values
+sum(is.na(nonUse))  
+sum(is.null(nonUse))
+
+#3.5 Checking the total no of rows and columns
+dim(nonUse) 
+
+#3.6 Checking the first and last few rows
+head(nonUse)
+tail(nonUse)
+```
+
+###  3.7.Change Column & Row names
+
+```{r}
+
+nonUse$PROVINCE1 = ifelse(nonUse$PROVINCE == 10, "Newfoundland and Labrador", 
+                       ifelse(nonUse$PROVINCE == 11,"Prince Edward Island",
+                              ifelse(nonUse$PROVINCE == 12,"Nova Scotia",
+                                     ifelse(nonUse$PROVINCE == 13,"New Brunswick",
+											ifelse(nonUse$PROVINCE == 24,"Quebec",
+													ifelse(nonUse$PROVINCE == 35,"Ontario",
+															ifelse(nonUse$PROVINCE == 46,"Manitoba",
+																	ifelse(nonUse$PROVINCE == 47,"Saskatchewan",
+																			ifelse(nonUse$PROVINCE == 48,"Alberta","British Columbia")))))))))
+
+
+
+nonUse$REGION1 = ifelse(nonUse$REGION == 1, "Atlantic Region", 
+                       ifelse(nonUse$REGION == 2,"Quebec",
+                              ifelse(nonUse$REGION == 3,"Ontario",
+                                     ifelse(nonUse$REGION == 4,"Manitoba/Saskatchewan",
+											                      ifelse(nonUse$REGION == 5,"Alberta","British Columbia")))))
+										
+
+nonUse$COMMUNITY = ifelse(nonUse$G_URBRUR == 01, "Montreal", 
+                       ifelse(nonUse$G_URBRUR == 02,"Toronto",
+                              ifelse(nonUse$G_URBRUR == 03,"Vancouver",
+                                     ifelse(nonUse$G_URBRUR == 04,"Other Urban excluding Prince Edward Island",
+											                      ifelse(nonUse$G_URBRUR == 05,"Rural excluding Prince Edward Island","Prince Edward Island")))))
+
+
+
+nonUse$AGEGRP = ifelse(nonUse$GCAGEGR6 == 01, "16 to 24", 
+                       ifelse(nonUse$GCAGEGR6 == 02,"25 to 34",
+                              ifelse(nonUse$GCAGEGR6 == 03,"35 to 44",
+                                     ifelse(nonUse$GCAGEGR6 == 04,"45 to 54",
+											                      ifelse(nonUse$GCAGEGR6 == 05,"55 to 64","65 and older")))))
+
+									
+nonUse$GENDER = ifelse(nonUse$CSEX == 1, "MALE", "FEMALE")
+
+nonUse$EDUCATIONLEVEL = ifelse(nonUse$G_CEDUC == 1, "High school or less",
+								                ifelse(nonUse$G_CEDUC == 2, "College or some post-secondary", "University certificate or degree"))
+
+
+nonUse$ISSTUDENT = ifelse(nonUse$G_CSTUD == 1, "Yes", "No")
+
+
+nonUse$EMPLOYMENTSTATUS = ifelse(nonUse$G_CLFSST == 1, "Employed",
+							                  	ifelse(nonUse$G_CLFSST == 2, "Unemployed", "Not in the labour force"))
+
+
+nonUse$HOUSEHOLDTYPE = ifelse(nonUse$GFAMTYPE == 1, "Single family household with unmarried children under 16",
+              								ifelse(nonUse$GFAMTYPE == 2, "Single family household without unmarried children under 16",
+              										ifelse(nonUse$GFAMTYPE == 3, "One person households", "Multi family households")))
+
+
+
+nonUse$HOUSEHOLDSIZE = ifelse(nonUse$G_HHSIZE == 1, "1 person",
+              								ifelse(nonUse$G_HHSIZE == 2, "2 persons",
+              										ifelse(nonUse$G_HHSIZE == 3, "3 persons", "4 or more persons")))
+
+
+nonUse$HOUSEHOLDEDUCATION = ifelse(nonUse$G_HEDUC == 1, "High school or less",
+								                  ifelse(nonUse$G_HEDUC == 2, "College or some post-secondary", "University certificate or degree"))
+							
+nonUse$STUDENTINHOUSEHOLD = ifelse(nonUse$G_HSTUD == 1, "Yes", "No")
+
+nonUse$ISINTERNETUSER = ifelse(nonUse$EV_Q01 == 1, "Yes", "No")
+
+nonUse$INTERNETUSEDURATION = ifelse(nonUse$EV_Q02 == 1, "Less than 1 year", 
+                  								   ifelse(nonUse$EV_Q02 == 2,"1 to 2 years",
+                  										  ifelse(nonUse$EV_Q02 == 3,"2 to 5 years",
+                  												 ifelse(nonUse$EV_Q02 == 4,"5 or more years",
+                  														ifelse(nonUse$EV_Q02 == 6,"Valid skip",
+                  																ifelse(nonUse$EV_Q02 == 7,"Don't know", "Refusal"))))))
+                  																
+nonUse$nonUse = ifelse(nonUse$NU_Q01 == 1, "Yes",
+      								ifelse(nonUse$NU_Q01 == 2, "No", 
+      										ifelse(nonUse$NU_Q01 == 6, "Valid skip","Don't know")))
+								
+nonUse$NU_COST = ifelse(nonUse$NU_Q02A == 1, "Yes", 
+        								ifelse(nonUse$NU_Q02A == 2,"No",
+        										ifelse(nonUse$NU_Q02A == 6,"Valid skip",
+        												ifelse(nonUse$NU_Q02A == 7,"Don't know",
+        														ifelse(nonUse$NU_Q02A == 8,"Refusal","Not stated")))))
+														
+nonUse$NU_LIMITEDACCESS = ifelse(nonUse$NU_Q02B == 1, "Yes", 
+                								ifelse(nonUse$NU_Q02B == 2,"No",
+                										ifelse(nonUse$NU_Q02B == 6,"Valid skip",
+                												ifelse(nonUse$NU_Q02B == 7,"Don't know",
+                														ifelse(nonUse$NU_Q02B == 8,"Refusal","Not stated")))))
+														
+nonUse$NU_DIFFICULT = ifelse(nonUse$NU_Q02C == 1, "Yes", 
+              								ifelse(nonUse$NU_Q02C == 2,"No",
+              										ifelse(nonUse$NU_Q02C == 6,"Valid skip",
+              												ifelse(nonUse$NU_Q02C == 7,"Don't know",
+              														ifelse(nonUse$NU_Q02C == 8,"Refusal","Not stated")))))
+
+nonUse$NU_NONEED = ifelse(nonUse$NU_Q02D == 1, "Yes", 
+          								ifelse(nonUse$NU_Q02D == 2,"No",
+          										ifelse(nonUse$NU_Q02D == 6,"Valid skip",
+          												ifelse(nonUse$NU_Q02D == 7,"Don't know",
+          														ifelse(nonUse$NU_Q02D == 8,"Refusal","Not stated")))))
+														
+nonUse$NU_NOTIME = ifelse(nonUse$NU_Q02E == 1, "Yes", 
+          								ifelse(nonUse$NU_Q02E == 2,"No",
+          										ifelse(nonUse$NU_Q02E == 6,"Valid skip",
+          												ifelse(nonUse$NU_Q02E == 7,"Don't know",
+          														ifelse(nonUse$NU_Q02E == 8,"Refusal","Not stated")))))
+														
+nonUse$NU_LACKOFSKILLS = ifelse(nonUse$NU_Q02F == 1, "Yes", 
+                								ifelse(nonUse$NU_Q02F == 2,"No",
+                										ifelse(nonUse$NU_Q02F == 6,"Valid skip",
+                												ifelse(nonUse$NU_Q02F == 7,"Don't know",
+                														ifelse(nonUse$NU_Q02F == 8,"Refusal","Not stated")))))
+														
+nonUse$NU_NOINTEREST = ifelse(nonUse$NU_Q02I == 1, "Yes", 
+								              ifelse(nonUse$NU_Q02I == 2,"No",
+										                ifelse(nonUse$NU_Q02I == 6,"Valid skip",
+												                  ifelse(nonUse$NU_Q02I == 7,"Don't know",
+														                      ifelse(nonUse$NU_Q02I == 8,"Refusal","Not stated")))))
+nonUse$NU_AGEREASONS = ifelse(nonUse$NU_G02K == 1, "Yes", 
+              								ifelse(nonUse$NU_G02K == 2,"No",
+              										ifelse(nonUse$NU_G02K == 6,"Valid skip",
+              												ifelse(nonUse$NU_G02K == 7,"Don't know",
+              														ifelse(nonUse$NU_G02K == 8,"Refusal","Not stated")))))
+nonUse$NU_OTHERS = ifelse(nonUse$NU_G02 == 1, "Yes", 
+          								ifelse(nonUse$NU_G02 == 2,"No",
+          										ifelse(nonUse$NU_G02 == 6,"Valid skip","Not stated")))
+```
+
+#### In this code, we are using the if else logic to change the name of the values to its actual meaning. We did this step to have a clearer insight when plotting the analysis in the Exploratory Analysis. Also, We are making a new columns instead of renaming it as later we will separate it into a new cleaned sheet.
+
+### 3.8 Split new data set in separate file
+
+```{r}
+nonUse_new <- nonUse[,25:48]
+```
+
+#### The above statement shows that we have separated the orignal file into a new one. So, For now we have an orignal sheet with the name "NonUse.csv" and a cleaned sheet which is named as "NonUse_new"
+
+# Part 4 - Exploratory Data Analysis
+
+### Univariate Analysis
+```{r}
+Gender = nonUse_new %>% select(GENDER)
+
+gender_chart <- as.data.frame(table(Gender$GENDER)) #created a frequency table
+ggplot(gender_chart, aes(x = Var1, y = Freq,  fill = Var1)) +
+  geom_col() +
+  geom_text(aes(label = Freq), vjust = 3.5, colour = "white")
+```
+
+#### Analysis: The result interprets that, Out of 23,178 people surveyed, 12,817 (40%) of the female and 10,361 Male participated in the survey.
+
+
+```{r}
+Region = nonUse_new %>% select(REGION1)
+
+gender_chart <- as.data.frame(table(Region$REGION1)) #created a frequency table
+ggplot(gender_chart, aes(x = Var1, y = Freq ,  fill = Var1)) +
+  geom_col() +
+  geom_text(aes(label = Freq), vjust = 3.5, colour = "white")
+```
+
+#### Analysis: The result interprets that, Out of 23,178 people surveyed, 6518 People participated from the Ontario region with Alberta having 2242 people being the least partipated region.
+
+
+```{r}
+agegrp = nonUse_new %>% select(AGEGRP)
+
+gender_chart <- as.data.frame(table(agegrp$AGEGRP)) #created a frequency table
+ggplot(gender_chart, aes(x = Var1, y = Freq,  fill = Var1)) +
+  geom_col() +
+  geom_text(aes(label = Freq), vjust = 1.5, colour = "white")
+```
+
+#### Analysis: The result interprets that, Out of 23,178 people surveyed interestingly 65 & older participated the most in the survey with 16 to 24 being the least participated age group.
+
+
+```{r}
+province = nonUse_new %>% select(PROVINCE1)
+
+gender_chart <- as.data.frame(table(province$PROVINCE1)) #created a frequency table
+ggplot(gender_chart, aes(x = Var1, y = Freq,  fill = Var1)) +
+  geom_col() +
+  geom_text(aes(label = Freq), vjust = 3.5, colour = "white")
+```
+
+
+#### Analysis: The result interprets that, Out of 23,178 people surveyed, 6518 People participated from the Ontario province with Prince Edward Island having 592 people being the least partipated province.
+
+
+# Plotting the bar chart for bivariate analysis
+
+
+```{r}
+dt <- as.table(as.matrix(table(nonUse_new$PROVINCE1,nonUse_new$GENDER)))
+
+balloonplot(t(dt), main ="Province is the reason for Non use across Gender", xlab ="", ylab="",
+            label = FALSE, show.margins = FALSE)
+```
+
+
+#### Analysis: Here it can be seen that, Female of Ontario and Quebec have participated the most among all the participants along with Male of Ontario and Quebec.
+
+
+```{r}
+dt <- as.table(as.matrix(table(nonUse_new$AGEGRP,nonUse_new$GENDER)))
+
+balloonplot(t(dt), main ="AgeGrp is the reason for Non use across Gender", xlab ="", ylab="",
+            label = FALSE, show.margins = FALSE)
+```
+
+#### Analysis: After the analysis, We found out that female were mostly interested in giving answer to the questions that's why we will be conducting chi-square test and bivariate analysis of different reason across gender.
+
+
+##### Chisquare test for Independence based on significant variables
+
+```{r}
+dt_cs <- as.table(as.matrix(table(nonUse_new$ISINTERNETUSER,nonUse_new$AGEGRP)))
+chisq <- chisq.test(dt_cs)
+round(chisq$residuals, 3)
+corrplot(chisq$residuals, is.cor = FALSE)
+
+dt_cs <- as.table(as.matrix(table(nonUse_new$ISINTERNETUSER,nonUse_new$GENDER)))
+chisq <- chisq.test(dt_cs)
+round(chisq$residuals, 3)
+corrplot(chisq$residuals, is.cor = FALSE)
+
+dt_cs <- as.table(as.matrix(table(nonUse_new$ISINTERNETUSER,nonUse_new$PROVINCE1)))
+chisq <- chisq.test(dt_cs)
+round(chisq$residuals, 3)
+corrplot(chisq$residuals, is.cor = FALSE)
+
+dt_cs <- as.table(as.matrix(table(nonUse_new$ISINTERNETUSER,nonUse_new$REGION1)))
+chisq <- chisq.test(dt_cs)
+round(chisq$residuals, 3)
+corrplot(chisq$residuals, is.cor = FALSE)
+
+dt_cs <- as.table(as.matrix(table(nonUse_new$ISINTERNETUSER,nonUse_new$EDUCATIONLEVEL)))
+chisq <- chisq.test(dt_cs)
+round(chisq$residuals, 3)
+corrplot(chisq$residuals, is.cor = FALSE)
+
+dt_cs <- as.table(as.matrix(table(nonUse_new$ISINTERNETUSER,nonUse_new$EMPLOYMENTSTATUS)))
+chisq <- chisq.test(dt_cs)
+round(chisq$residuals, 3)
+corrplot(chisq$residuals, is.cor = FALSE)
+
+dt_cs <- as.table(as.matrix(table(nonUse_new$ISINTERNETUSER,nonUse_new$HOUSEHOLDEDUCATION)))
+chisq <- chisq.test(dt_cs)
+round(chisq$residuals, 3)
+corrplot(chisq$residuals, is.cor = FALSE)
+
+dt_cs <- as.table(as.matrix(table(nonUse_new$ISINTERNETUSER,nonUse_new$HOUSEHOLDEDUCATION)))
+chisq <- chisq.test(dt_cs)
+round(chisq$residuals, 3)
+corrplot(chisq$residuals, is.cor = FALSE)
+```
+
+#### positive residuals are in blue. Positive values in cells specify an attraction (positive association) between the corresponding row and column variables whereas Negative residuals are in red. This implies a repulsion (negative association) between the corresponding row and column variables.
+
+
+### 1.What we want to discover: is cost the reason why you don't use internet?
+
+```{r}
+dt <- as.table(as.matrix(table(nonUse_new$NU_COST,nonUse_new$GENDER)))
+
+balloonplot(t(dt), main ="Cost is the reason for Non use across Gender", xlab ="", ylab="",
+            label = FALSE, show.margins = FALSE)
+```
+
+```{r}
+cost_gender_yn = nonUse_new %>% select(NU_COST,GENDER) %>% 
+  filter(NU_COST =="Yes" | NU_COST =="No" )
+counts_cost_gender_yn = table(cost_gender_yn$NU_COST,cost_gender_yn$GENDER)
+
+# Plotting the bar chart for bivariate analysis
+cost_gender_chart <- as.data.frame(counts_cost_gender_yn) #created a frequency table
+ggplot(cost_gender_chart, aes(x = Var2, y = Freq, fill = Var1)) + labs(title = "Is Cost the reason, eople don't use Internet?", subtitle = "Reply of No and yes based on Gender?", caption = "R Project")  + xlab("Choice of Reason") +ylab("Frequency of Answers") +
+  geom_col() +
+  geom_text(aes(label = Freq), vjust = 3.5, colour = "white")
+```
+
+#### Analysis: The result interprets that, Out of 23,178 people surveyed, 2880 (51%) of the Female  and 2222( 40%) of the male answered NO as the cost being the major reason for non-usage of internet and a small fraction of male and female answered that Yes cost is the major reason behind non-usage of internet which can be clearly seen in the chi-square test of independence too.
+
+
+### 2.What we want to discover: is lack of interest the reason why you don't use internet?
+
+##### 2.Chisquare test for Independence
+
+```{r}
+dt <- as.table(as.matrix(table(nonUse_new$NU_NOINTEREST,nonUse_new$GENDER)))
+
+balloonplot(t(dt), main ="No Interest is the reason for Non use across Gender", xlab ="", ylab="",
+            label = FALSE, show.margins = FALSE)
+```
+
+```{r}
+interest_gender_yn = nonUse_new %>% select(NU_NOINTEREST,GENDER) %>% 
+  filter(NU_NOINTEREST =="Yes" | NU_NOINTEREST =="No" )
+counts_interest_gender_yn = table(interest_gender_yn$NU_NOINTEREST,interest_gender_yn$GENDER)
+
+interest_gender_chart <- as.data.frame(counts_interest_gender_yn) #created a frequency table
+ggplot(interest_gender_chart, aes(x = Var2, y = Freq, fill = Var1)) + labs(title = "Is No Interest the reason, people don't use Internet?", subtitle = "Reply of No and yes based on Gender?", caption = "R Project")  + xlab("Choice of Reason") +ylab("Frequency of Answers") +
+  geom_col() +
+  geom_text(aes(label = Freq), vjust = 3.5, colour = "white")
+
+```
+
+#### Analysis: The result interprets that, Out of 23,178 people surveyed, 1984(35%) of the Female and 1538(27%) of the male answered NO as lack of interest being the major reason for non-usage of internet and more than 40% of male and female answered that Yes lack of interest is the major reason behind non-usage of internet which can be clearly seen in the chi-square test of independence too.
+
+
+### 3.What we want to discover: is the limited access the reason why you don't use internet?
+
+##### 3.Chisquare test for Independence
+
+```{r}
+dt <- as.table(as.matrix(table(nonUse_new$NU_LIMITEDACCESS,nonUse_new$GENDER)))
+
+balloonplot(t(dt), main ="Limited Access is the reason for Non use across Gender", xlab ="", ylab="",
+            label = FALSE, show.margins = FALSE)
+```
+
+```{r}
+access_gender_yn = nonUse_new %>% select(NU_LIMITEDACCESS,GENDER) %>% 
+  filter(NU_LIMITEDACCESS =="Yes" | NU_LIMITEDACCESS =="No" )
+counts_access_gender_yn = table(access_gender_yn$NU_LIMITEDACCESS,access_gender_yn$GENDER)
+
+access_gender_chart <- as.data.frame(counts_access_gender_yn) #created a frequency table
+ggplot(access_gender_chart, aes(x = Var2, y = Freq, fill = Var1))  + labs(title = "Is Limited Access the reason, people don't use Internet?", subtitle = "Reply of No and yes based on Gender?", caption = "R Project")  + xlab("Choice of Reason") +ylab("Frequency of Answers") +
+  geom_col() +
+  geom_text(aes(label = Freq), vjust = 3.5, colour = "white")
+```
+
+#### Analysis: The result interprets that, Out of 23,178 people surveyed, 2575 (49%) of the Female and 2035 (36%) of the male answered NO as limited access being the major reason for non-usage of internet and a small fraction of male and female answered that Yes limited access being the major reason behind non-usage of internet which can be clearly seen in the chi-square test of independence too.
+
+### 4.What we want to discover: is the difficulty the reason why you don't use internet?
+
+##### 4.Chisquare test for Independence
+
+```{r}
+dt <- as.table(as.matrix(table(nonUse_new$NU_DIFFICULT,nonUse_new$GENDER)))
+
+balloonplot(t(dt), main ="Difficulty is the reason for Non use across Gender", xlab ="", ylab="",
+            label = FALSE, show.margins = FALSE)
+```
+
+```{r}
+difficulty_gender_yn = nonUse_new %>% select(NU_DIFFICULT,GENDER) %>% 
+  filter(NU_DIFFICULT =="Yes" | NU_DIFFICULT =="No" )
+counts_difficulty_gender_yn = table(difficulty_gender_yn$NU_DIFFICULT,difficulty_gender_yn$GENDER)
+
+difficulty_gender_chart <- as.data.frame(counts_difficulty_gender_yn) #created a frequency table
+ggplot(difficulty_gender_chart, aes(x = Var2, y = Freq, fill = Var1)) +  labs(title = "Is Difficulty the reason, people don't use Internet?", subtitle = "Reply of No and yes based on Gender?", caption = "R Project")  + xlab("Choice of Reason") +ylab("Frequency of Answers") +
+  geom_col() +
+  geom_text(aes(label = Freq), vjust = 3.5, colour = "white")
+```
+
+#### Analysis: The result interprets that, Out of 23,178 people surveyed, 2979 (53%) of the Female and 2203 (39%) of the male answered NO as limited access being the major reason for non-usage of internet and a small fraction of male and female answered that Yes limited access being the major reason behind non-usage of internet which can be clearly seen in the chi-square test of independence too.
+
+### 5.What we want to discover: is lack of need the reason why you don't use internet?
+
+##### 5.Chisquare test for Independence
+
+```{r}
+dt <- as.table(as.matrix(table(nonUse_new$NU_NONEED,nonUse_new$GENDER)))
+
+balloonplot(t(dt), main ="No Need is the reason for Non use across Gender", xlab ="", ylab="",
+            label = FALSE, show.margins = FALSE)
+```
+
+```{r}
+
+need_gender_yn = nonUse_new %>% select(NU_NONEED,GENDER) %>% 
+  filter(NU_NONEED =="Yes" | NU_NONEED =="No" )
+counts_need_gender_yn = table(need_gender_yn$NU_NONEED,need_gender_yn$GENDER)
+
+need_gender_chart <- as.data.frame(counts_need_gender_yn) #created a frequency table
+ggplot(need_gender_chart, aes(x = Var2, y = Freq, fill = Var1)) +  labs(title = "Is No Need the reason, eople don't use Internet?", subtitle = "Reply of No and yes based on Gender?", caption = "R Project")  + xlab("Choice of Reason") +ylab("Frequency of Answers") +
+  geom_col() +
+  geom_text(aes(label = Freq), vjust = 3.5, colour = "white")
+```
+
+#### Analysis: The result interprets that, Out of 23,178 people surveyed, 2562 (46%) of the Female and 1832 (32%) of the male answered NO as limited access being the major reason for non-usage of internet and a small fraction of male and female answered that Yes limited access being the major reason behind non-usage of internet which can be clearly seen in the chi-square test of independence too.
+
+### 6.What we want to discover: is the lack of time the reason why you don't use internet?
+
+##### 6.Chisquare test for Independence
+
+```{r}
+dt <- as.table(as.matrix(table(nonUse_new$NU_NOTIME,nonUse_new$GENDER)))
+
+balloonplot(t(dt), main ="No Time is the reason for Non use across Gender", xlab ="", ylab="",
+            label = FALSE, show.margins = FALSE)
+```
+
+```{r}
+
+time_gender_yn = nonUse_new %>% select(NU_NOTIME,GENDER) %>% 
+  filter(NU_NOTIME =="Yes" | NU_NOTIME =="No" )
+counts_time_gender_yn = table(time_gender_yn$NU_NOTIME,time_gender_yn$GENDER)
+
+time_gender_chart <- as.data.frame(counts_time_gender_yn) #created a frequency table
+ggplot(time_gender_chart, aes(x = Var2, y = Freq, fill = Var1)) + labs(title = "Is No Time the reason, eople don't use Internet?", subtitle = "Reply of No and yes based on Gender?", caption = "R Project")  + xlab("Choice of Reason") +ylab("Frequency of Answers") +
+  geom_col() +
+  geom_text(aes(label = Freq), vjust = 3.5, colour = "white")
+```
+
+#### Analysis: The result interprets that, Out of 23,178 people surveyed, 3019 (54%) of the Female and 2291 (41%) of the male answered NO as limited access being the major reason for non-usage of internet and a small fraction of male and female answered that Yes limited access being the major reason behind non-usage of internet which can be clearly seen in the chi-square test of independence too.
+
+
+### 7.What we want to discover: is the lack of skills the reason why you don't use internet?
+
+##### 7.Chisquare test for Independence
+
+```{r}
+dt <- as.table(as.matrix(table(nonUse_new$NU_LACKOFSKILLS,nonUse_new$GENDER)))
+
+balloonplot(t(dt), main ="Lack of Skill is the reason for Non use across Gender", xlab ="", ylab="",
+            label = FALSE, show.margins = FALSE)
+```
+
+```{r}
+
+skills_gender_yn = nonUse_new %>% select(NU_LACKOFSKILLS,GENDER) %>% 
+  filter(NU_LACKOFSKILLS =="Yes" | NU_LACKOFSKILLS =="No" )
+counts_skills_gender_yn = table(skills_gender_yn$NU_LACKOFSKILLS,skills_gender_yn$GENDER)
+
+skills_gender_chart <- as.data.frame(counts_skills_gender_yn) #created a frequency table
+ggplot(skills_gender_chart, aes(x = Var2, y = Freq, fill = Var1)) + labs(title = "Is Lack of Skills the reason, eople don't use Internet?", subtitle = "Reply of No and yes based on Gender?", caption = "R Project")  + xlab("Choice of Reason") +ylab("Frequency of Answers") +
+  geom_col() +
+  geom_text(aes(label = Freq), vjust = 3.5, colour = "white")
+```
+
+#### Analysis: The result interprets that, Out of 23,178 people surveyed, 2665 (47%) of the Female and 1916 (34%) of the male answered NO as limited access being the major reason for non-usage of internet and a small fraction of male and female answered that Yes limited access being the major reason behind non-usage of internet which can be clearly seen in the chi-square test of independence too.
+
+
+### 8.What we want to discover: is age the reason why you don't use internet?
+
+##### 8.Chisquare test for Independence
+
+
+
+
+```{r}
+
+
+dt <- as.table(as.matrix(table(nonUse_new$NU_AGEREASONS,nonUse_new$GENDER)))
+
+balloonplot(t(dt), main ="Age is the reason for Non use across Gender", xlab ="", ylab="",
+            label = FALSE, show.margins = FALSE)
+
+
+```
+
+#### 8.Bivariate Analysis
+
+```{r}
+
+age_gender_yn = nonUse_new %>% select(NU_AGEREASONS,GENDER) %>% 
+  filter(NU_AGEREASONS =="Yes" | NU_AGEREASONS =="No" )
+counts_age_gender_yn = table(age_gender_yn$NU_AGEREASONS,age_gender_yn$GENDER)
+
+age_gender_chart <- as.data.frame(counts_age_gender_yn) #created a frequency table
+ggplot(age_gender_chart, aes(x = Var2, y = Freq, fill = Var1)) + labs(title = "Is Age Reasons the reason, eople don't use Internet?", subtitle = "Reply of No and yes based on Gender?", caption = "R Project")  + xlab("Choice of Reason") +ylab("Frequency of Answers") +
+  geom_col() +
+  geom_text(aes(label = Freq), vjust = 3.5, colour = "white")
+```
+
+#### Analysis: The result interprets that, Out of 23,178 people surveyed, 2589 (46%) of the Female and 2104 (37%) of the male answered NO as age being the major reason for non-usage of internet and a small fraction of male and female answered that Yes age is the major reason behind non-usage of internet which can be clearly seen in the chi-square test of independence too.
+
+
+
+## Identify the Reasons behind Non-Usage of Internet? 
+
+### 1.What we want to discover: Is Cost the reason why you don't use internet?
+```{r}
+
+cost_yn = nonUse_new %>% select(NU_COST) %>% 
+  filter(NU_COST =="Yes" | NU_COST =="No" )
+
+cost_chart <- as.data.frame(table(cost_yn$NU_COST)) 
+cost_chart$Choice_of_Reasons = cost_chart$Var1
+cost_chart$Var1 = NULL
+
+#created a frequency table
+ggplot(cost_chart, aes(x = Choice_of_Reasons, y = Freq, fill= Choice_of_Reasons))  + labs(title = "Why People don't use Internet?", subtitle = "Is Cost the major reason?", caption = "R Project") +xlab("Choice of Reason") +ylab("Frequency of Answers") +
+  geom_col() +
+  geom_text(aes(label = Freq), vjust = 3.5, colour = "white") 
+
+```
+
+#### Analysis: The result interprets that, Out of 23,178 people surveyed, 5,562 people answered in total with the option Yes and No in which 8% people of the people or 460 consider cost as a major reason for non-usage of Internet.
+
+### 2.What we want to discover: is lack of interest the reason why you don't use internet?
+```{r}
+interest_yn = nonUse_new %>% select(NU_NOINTEREST) %>% 
+  filter(NU_NOINTEREST =="Yes" | NU_NOINTEREST =="No" )
+
+interest_chart <- as.data.frame(table(interest_yn$NU_NOINTEREST)) 
+interest_chart$Choice_of_Reasons = interest_chart$Var1
+interest_chart$Var1 = NULL
+
+#Create a frequency table
+ggplot(interest_chart, aes(x = Choice_of_Reasons, y = Freq, fill= Choice_of_Reasons))  + labs(title = "Why People don't use Internet?", subtitle = "Is Lack of Interest the major reason?", caption = "R Project") +xlab("Choice of Reason") +ylab("Frequency of Answers") +
+  geom_col() +
+  geom_text(aes(label = Freq), vjust = 1.5, colour = "white") 
+
+```
+
+#### Analysis: The result interprets that, Out of 23,178 people surveyed, 5,562 people answered in total with the option Yes and No in which 36% people of the people or 2040 consider lack of interest as a major reason for non-usage of Internet.
+
+### 3.What we want to discover: is the limited access the reason why you don't use internet?
+```{r}
+access_yn = nonUse_new %>% select(NU_LIMITEDACCESS) %>% 
+  filter(NU_LIMITEDACCESS =="Yes" | NU_LIMITEDACCESS =="No" )
+
+access_chart <- as.data.frame(table(access_yn$NU_LIMITEDACCESS)) 
+access_chart$Choice_of_Reasons = access_chart$Var1
+access_chart$Var1 = NULL
+
+#Create a frequency table
+ggplot(access_chart, aes(x = Choice_of_Reasons, y = Freq, fill= Choice_of_Reasons))  + labs(title = "Why People don't use Internet?", subtitle = "Is Limited Access the major reason?", caption = "R Project") +xlab("Choice of Reason") +ylab("Frequency of Answers") +
+  geom_col() +
+  geom_text(aes(label = Freq), vjust = 1.5, colour = "white") 
+
+```
+
+#### Analysis: The result interprets that, Out of 23,178 people surveyed, 5,562 people answered in total with the option Yes and No in which 17% people of the people or 952 consider limited access  as a major reason for non-usage of Internet.
+
+
+### 4.What we want to discover: Is difficulty the major reason why you don't use internet?
+```{r}
+difficulty_yn = nonUse_new %>% select(NU_DIFFICULT) %>% 
+  filter(NU_DIFFICULT =="Yes" | NU_DIFFICULT =="No" )
+
+difficulty_chart <- as.data.frame(table(difficulty_yn$NU_DIFFICULT)) 
+difficulty_chart$Choice_of_Reasons = difficulty_chart$Var1
+difficulty_chart$Var1 = NULL
+
+#Create a frequency table
+ggplot(difficulty_chart, aes(x = Choice_of_Reasons, y = Freq, fill= Choice_of_Reasons))  + labs(title = "Why People don't use Internet?", subtitle = "Is Difficulty the major reason?", caption = "R Project") +xlab("Choice of Reason") +ylab("Frequency of Answers") +
+  geom_col() +
+  geom_text(aes(label = Freq), vjust = 1.5, colour = "white") 
+```
+
+#### Analysis: The result interprets that, Out of 23,178 people surveyed, 5,562 people answered in total with the option Yes and No in which 7% people of the people or 380 consider difficulty as a major reason for non-usage of Internet.
+
+### 5.What we want to discover: Is lack of need the reason why you don't use internet?
+```{r}
+need_yn = nonUse_new %>% select(NU_NONEED) %>% 
+  filter(NU_NONEED =="Yes" | NU_NONEED =="No" )
+
+need_chart <- as.data.frame(table(need_yn$NU_NONEED)) 
+need_chart$Choice_of_Reasons = need_chart$Var1
+need_chart$Var1 = NULL
+
+#Create a frequency table
+ggplot(need_chart, aes(x = Choice_of_Reasons, y = Freq, fill= Choice_of_Reasons))  + labs(title = "Why People don't use Internet?", subtitle = "Is Lack of need the major reason?", caption = "R Project") +xlab("Choice of Reason") +ylab("Frequency of Answers") +
+  geom_col() +
+  geom_text(aes(label = Freq), vjust = 1.5, colour = "white") 
+```
+
+#### Analysis: The result interprets that, Out of 23,178 people surveyed, 5,562 people answered in total with the option Yes and No in which 20% people of the people or 1168 consider lack of need as a major reason for non-usage of Internet.
+
+### 6.What we want to discover: is the lack of time the reason why you don't use internet?
+```{r}
+time_yn = nonUse_new %>% select(NU_NOTIME) %>% 
+  filter(NU_NOTIME =="Yes" | NU_NOTIME =="No" )
+
+time_chart <- as.data.frame(table(time_yn$NU_NOTIME)) 
+time_chart$Choice_of_Reasons = time_chart$Var1
+time_chart$Var1 = NULL
+
+#Created a frequency table
+ggplot(time_chart, aes(x = Choice_of_Reasons, y = Freq, fill= Choice_of_Reasons))  + labs(title = "Why People don't use Internet?", subtitle = "Is Lack of time the major reason?", caption = "R Project") +xlab("Choice of Reason") +ylab("Frequency of Answers") +
+  geom_col() +
+  geom_text(aes(label = Freq), vjust = 1.5, colour = "white") 
+```
+
+#### Analysis: The result interprets that, Out of 23,178 people surveyed, 5,562 people answered in total with the option Yes and No in which 4.5% people of the people or 252 consider lack of time as a major reason for non-usage of Internet.
+
+### 8.What we want to discover: Is lack of Skills the reason why you don't use internet?
+```{r}
+skills_yn = nonUse_new %>% select(NU_LACKOFSKILLS) %>% 
+  filter(NU_LACKOFSKILLS =="Yes" | NU_LACKOFSKILLS =="No" )
+
+skills_chart <- as.data.frame(table(skills_yn$NU_LACKOFSKILLS)) 
+skills_chart$Choice_of_Reasons = skills_chart$Var1
+skills_chart$Var1 = NULL
+
+#created a frequency table
+ggplot(skills_chart, aes(x = Choice_of_Reasons, y = Freq, fill= Choice_of_Reasons))  + labs(title = "Why People don't use Internet?", subtitle = "Is Lack of skills the major reason?", caption = "R Project") +xlab("Choice of Reason") +ylab("Frequency of Answers") +
+  geom_col() +
+  geom_text(aes(label = Freq), vjust = 1.5, colour = "white") 
+```
+
+#### Analysis: The result interprets that, Out of 23,178 people surveyed, 5,562 people answered in total with the option Yes and No in which 17% people of the people or 981 consider lack of skills as a major reason for non-usage of Internet.
+
+### 9.What we want to discover: Is age the reason why you don't use internet?
+
+```{r}
+age_yn = nonUse_new %>% select(NU_AGEREASONS) %>% 
+  filter(NU_AGEREASONS =="Yes" | NU_AGEREASONS =="No" )
+
+age_chart <- as.data.frame(table(age_yn$NU_AGEREASONS)) 
+age_chart$Choice_of_Reasons = age_chart$Var1
+age_chart$Var1 = NULL
+
+#Created a frequency table
+ggplot(age_chart, aes(x = Choice_of_Reasons, y = Freq, fill= Choice_of_Reasons))  + labs(title = "Why People don't use Internet?", subtitle = "Is Age the major reason?", caption = "R Project") +xlab("Choice of Reason") +ylab("Frequency of Answers") +
+  geom_col() +
+  geom_text(aes(label = Freq), vjust = 1.5, colour = "white")
+```
+
+#### Analysis: The result interprets that, Out of 23,178 people surveyed, 5,562 people answered in total with the option Yes and No in which 15% people of the people or 869 consider age as a major reason for non-usage of Internet.
+
+
+```{r}
+#Pie Chart showing proportion of people based on education level 
+eol_table <- table(nonUse_new$EDUCATIONLEVEL) #table of counts  
+proportion_table <- prop.table(eol_table)#table of proportion 
+piepercent<- round(100*eol_table/sum(eol_table), 1)  
+piepercent 
+pie(proportion_table,labels =piepercent, main = "Proportion of people based on education level", col = rainbow(length(proportion_table))) 
+legend("topright", c("College or some post-secondary","High school or less","University certificate or degree"), cex = 0.7,fill = rainbow(length(proportion_table)))
+```
+
+#### Analysis: Here it can be seen in the pie chart that, Education Level of people having College or some post-secondary degree having participated the most with 42.1% following with High School or less with 39.2%.
+
+
+```{r}
+#Pie Chart showing proportion of years of usage
+you_table <- table(nonUse_new$INTERNETUSEDURATION) #table of counts  
+proportion_table <- prop.table(you_table)#table of proportion 
+piepercent<- round(100*you_table/sum(you_table), 1)  
+piepercent 
+pie(proportion_table,labels =piepercent, main = "Proportion of years of Internet usage", col = rainbow(length(proportion_table))) 
+legend("topright", c("1 to 2 years","2 to 5 years","5 or more years","Don't know","Less than 1 year","Refusal","Valid skip"), cex = 0.7,fill = rainbow(length(proportion_table)))
+
+```
+
+#### Analysis: Here it can be seen in the pie chart that, People using internet for more than 5 or more years participated the most with 58.1% following with 11.2% poeple using internet for 2 to 5 years. It can also be seen that, 24.2% of people skipped this question. 
+
+
+
+## Since there are no numerical variables we cannot perform Principal Component Analysis (PCA)
+
+## Since KNN works on the concept of Euclidean Distance which involes finding distance using numerical variabls. Hence, We cannot perform K-Nearest Neighbour (KNN) analysis on it.
+
+# Part 4 - Predictive Analysis
+
+
+```{r}
+data = nonUse_new
+  
+cols = names(data)
+
+data[cols] <- lapply(data[cols] , factor)
+
+# Splitting dataset
+split <- sample.split(data, SplitRatio = 0.8)
+split
+
+train_reg <- subset(data, split == "TRUE")
+test_reg <- subset(data, split == "FALSE")
+
+# Training model 
+logistic_model <- glm(ISINTERNETUSER ~ PROVINCE1 + EDUCATIONLEVEL  + GENDER + HOUSEHOLDEDUCATION + EMPLOYMENTSTATUS + HOUSEHOLDTYPE ,
+                      data = train_reg, 
+                      family = "binomial")
+
+# Summary
+summary(logistic_model)
+
+
+# Predict test data based on model
+predict_reg <- predict(logistic_model, 
+                       test_reg, type = "response")
+
+# Changing probabilities #ABOVE 0.5=YES
+predict_reg <- ifelse(predict_reg >0.5, 1, 0)
+
+# Evaluating model accuracy
+# using confusion matrix
+table(test_reg$ISINTERNETUSER, predict_reg)
+
+# ROC-AUC Curve
+ROCPred <- prediction(predict_reg, test_reg$ISINTERNETUSER) 
+ROCPer <- performance(ROCPred, measure = "tpr", 
+                      x.measure = "fpr")
+
+
+# Plotting curve
+plot(ROCPer)
+plot(ROCPer, colorize = TRUE, 
+     print.cutoffs.at = seq(0.1, by = 0.1), 
+     main = "ROC CURVE")
+abline(a = 0, b = 1)
+
+
+auc <- performance(ROCPred, measure = "auc")
+auc <- auc@y.values[[1]]
+auc
+
+auc <- round(auc, 4)
+legend(.6, .4, auc, title = "AUC", cex = 1)
+```
+
+####Logistics Model Analysis: Province, Gender , Household education level, employement status and household type are the significant drivers behind predicting a person is a internet user or not. The AUC = 0.7 which will help us predict future potential internet users in a new sample.
+
+
+```{r}
+rf <- randomForest(ISINTERNETUSER~ PROVINCE1 + EDUCATIONLEVEL  + GENDER + HOUSEHOLDEDUCATION + EMPLOYMENTSTATUS + HOUSEHOLDTYPE + HOUSEHOLDSIZE + COMMUNITY, data=train_reg, NTREE= 500)
+(rf)
+
+
+# Importance plot
+importance(rf)
+
+# Variable importance plot
+varImpPlot(rf)
+```
+
+
+
+#### Random Forest Model Analysis: The model is not a good classifier as compared to the logistic model which has better accuracy and confusion matrix
+
+```{r}
+classifier_cl = naiveBayes(ISINTERNETUSER~ PROVINCE1 + EDUCATIONLEVEL  + GENDER + HOUSEHOLDEDUCATION + EMPLOYMENTSTATUS + HOUSEHOLDTYPE + HOUSEHOLDSIZE, data=train_reg)
+
+
+
+# Predicting on test data'
+y_pred <- predict(classifier_cl, newdata = test_reg)
+
+# Confusion Matrix
+cm <- table(test_reg$ISINTERNETUSER, y_pred)
+cm
+
+# Model Evaluation
+confusionMatrix(cm)
+```
+
+#### Naives Bayes Model Analysis: This model has similar accuracy like logistic model but this model doesnt help us understand the impact of each variable and hence logistic model is better suited to analyze our problem for this data
+
+# Part 5 - Recommendations/Conclusions
+
+#### Conclusion: In this survey, The Significant variables identified in various models suggested that about the Internet user in near future. We ran 3 models, out of which our recommended Model is Logistics as it gives us a detailed overview of different variables predicting on the internet user. As per the Logistics model, Provinces, Household education and Education level are the major drivers predicting about an Internet user or non-user. As per the Exploratory Data Analysis performed on the survey, The various reasons given for the non-usage of Internet are not helpful because of high percentage of skips in the dataset.
+
+#### Recommendations: 
+#### 1. BC and Ontario provinces are positive drivers of internet users hence more subscribers can be gained in these provinces 
+
+#### 2. If the education is a degree or a Masters, these people tend to be high internet users as compared to other education levels. 
+
+#### 3. Also, Single family household are major drivers of internet users and hence companies can target these people to increase subscriber base
